@@ -7,7 +7,7 @@ It catches two kinds of loop:
 | Loop | Example | How it's detected |
 |------|---------|-------------------|
 | **Tool-call loop** | `read package.json` → `read package.json` → `read package.json`, or `edit X` → `bash test` → `edit X` → `bash test` … | Each call is reduced to its tool name plus its arguments, with keys sorted. If the most recent calls form one cycle of 1–4 calls repeated 3 times, the call that completes the 3rd repeat is blocked before it runs, and the agent is stopped. |
-| **Repetitive output** | `I will now fix the bug. I will now fix the bug. I will now fix the bug. …` in text or thinking | While the model streams, the guard checks whether the end of the output is one unit (1–1000 chars) repeated at least 3 times over at least 300 chars. It also flags any line (12+ chars) that appears 8 times within 60 lines. The stream is aborted, which closes the HTTP request, so llama.cpp and similar servers stop generating too. |
+| **Repetitive output** | `I will now fix the bug. I will now fix the bug. I will now fix the bug. …` in text or thinking | While the model streams, the guard checks whether the end of the output is one unit (1–1000 chars) repeated at least 3 times over at least 300 chars. It also flags any line of prose (12+ chars) that appears 8 times within 60 lines. Code is skipped for this check, both inside markdown code fences and lines that look like code, because code repeats lines like `#[serde(default)]` legitimately. The stream is aborted, which closes the HTTP request, so llama.cpp and similar servers stop generating too. |
 
 Streamed tool-call arguments, such as a file being written, are scanned too, but with 4× the character threshold and no line check, because file contents often repeat lines legitimately.
 

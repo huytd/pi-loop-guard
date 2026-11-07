@@ -98,6 +98,27 @@ I also added a test for the empty-file case and ran the suite; all 42 tests pass
 `.repeat(2);
 		assert.equal(feed(new TextRepetitionDetector(opts), text), undefined);
 	});
+
+	const fields = ["id", "is_processing", "state", "id_task", "n_prompt_tokens", "next_token", "generated", "prompt", "tok_s"];
+	const serdeStruct = `#[derive(Deserialize)]\nstruct Slot {\n${fields.map((f) => `    #[serde(default)]\n    ${f}: Option<u64>,\n`).join("")}}\n`;
+
+	it("ignores repeated lines in fenced code", () => {
+		const text = `So: keep it tolerant and normalized:\n\n\`\`\`rust\n${serdeStruct}\`\`\`\n\nThat should parse both shapes.\n`;
+		assert.equal(feed(new TextRepetitionDetector(opts), text), undefined);
+	});
+
+	it("ignores repeated lines in unfenced code", () => {
+		assert.equal(feed(new TextRepetitionDetector(opts), serdeStruct), undefined);
+		let go = "";
+		for (let i = 0; i < 10; i++) go += `\tv${i}, err := step${i}(ctx)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n`;
+		assert.equal(feed(new TextRepetitionDetector(opts), go), undefined);
+	});
+
+	it("still flags a prose loop between code blocks", () => {
+		let text = "";
+		for (let i = 0; i < 10; i++) text += `Wait, let me reconsider this.\n\`\`\`rust\nlet x${i} = ${i};\n\`\`\`\n`;
+		assert.equal(feed(new TextRepetitionDetector(opts), text)?.kind, "line");
+	});
 });
 
 describe("loadConfig", () => {

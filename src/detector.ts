@@ -104,7 +104,9 @@ export class TextRepetitionDetector {
 	private buf = "";
 	private sinceCheck = 0;
 	private partialLine = "";
-	private recentLines: string[] = [];
+	private inFence = false;
+	/** Recent lines; null for lines the line check skipped (short or code). */
+	private recentLines: (string | null)[] = [];
 	private lineCounts = new Map<string, number>();
 	private readonly window: number;
 	private readonly opts: TextRepetitionOptions;
@@ -132,6 +134,7 @@ export class TextRepetitionDetector {
 		this.buf = "";
 		this.sinceCheck = 0;
 		this.partialLine = "";
+		this.inFence = false;
 		this.recentLines = [];
 		this.lineCounts.clear();
 	}
@@ -166,8 +169,14 @@ export class TextRepetitionDetector {
 		this.partialLine = parts.pop() ?? "";
 		for (const raw of parts) {
 			const line = raw.trim().replace(/\s+/g, " ");
-			this.recentLines.push(line);
-			if (line.length >= this.opts.minLineLength) {
+			const fence = /^(```|~~~)/.test(line);
+			if (fence) this.inFence = !this.inFence;
+			// Code legitimately repeats lines (`#[serde(default)]`, `}`, `if err != nil {`),
+			// so only prose counts. Exact repeated code is still caught by the periodic check.
+			const counted =
+				!fence && !this.inFence && line.length >= this.opts.minLineLength && looksLikeProse(raw, line);
+			this.recentLines.push(counted ? line : null);
+			if (counted) {
 				const count = (this.lineCounts.get(line) ?? 0) + 1;
 				this.lineCounts.set(line, count);
 				if (count >= this.opts.lineRepeats) {
@@ -175,9 +184,9 @@ export class TextRepetitionDetector {
 				}
 			}
 			if (this.recentLines.length > this.opts.lineWindow) {
-				const old = this.recentLines.shift()!;
-				const c = this.lineCounts.get(old);
-				if (c !== undefined) {
+				const old = this.recentLines.shift();
+				const c = old == null ? undefined : this.lineCounts.get(old);
+				if (old != null && c !== undefined) {
 					if (c <= 1) this.lineCounts.delete(old);
 					else this.lineCounts.set(old, c - 1);
 				}
@@ -185,6 +194,18 @@ export class TextRepetitionDetector {
 		}
 		return undefined;
 	}
+}
+
+/**
+ * Rough test for a natural-language line, as opposed to unfenced code: not
+ * indented, no code punctuation, and mostly plain words.
+ */
+function looksLikeProse(raw: string, line: string): boolean {
+	if (/^(\t| {2,})(?![-*+] |\d+\. )/.test(raw)) return false;
+	if (/[{}[\];=]|::|->|^[#@/]/.test(line)) return false;
+	const tokens = line.split(" ");
+	const words = tokens.filter((t) => /^[("'`]*[A-Za-z][\w'’.-]*[)"'`,.!?:…]*$/.test(t)).length;
+	return words >= 3 && words / tokens.length >= 0.75;
 }
 
 function truncate(s: string, max = 80): string {
